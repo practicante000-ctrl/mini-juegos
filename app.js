@@ -60,14 +60,127 @@ function saveNumber(key, value) {
 }
 
 // ==========================
-// ❌⭕ XO ONLINE (Firestore)
+// ❌⭕ XO COMPLETO (CPU + ONLINE)
 // ==========================
+
+import {
+  collection,
+  addDoc,
+  doc,
+  getDoc,
+  updateDoc,
+  onSnapshot
+} from "https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js";
+
+let modoXO = null; // "cpu" | "online"
+let tableroXO = Array(9).fill("");
+let turnoXO = "X";
+let juegoXOActivo = false;
+
+// ONLINE
 let salaId = null;
-let jugador = null;
+let jugadorOnline = null;
 let unsubSala = null;
 
+// ==========================
+// Render principal XO
+// ==========================
 function renderXO() {
-  gameTitle.textContent = "❌⭕ XO Online";
+  gameTitle.textContent = "❌⭕ XO";
+
+  gameScreen.innerHTML = `
+    <div class="xo-container">
+      <div class="xo-modos">
+        <button id="xo-solo">🤖 Jugar solo</button>
+        <button id="xo-online">🌍 Jugar online</button>
+      </div>
+
+      <p id="xo-info" class="xo-mensaje"></p>
+
+      <div class="xo-board">
+        ${Array(9)
+          .fill("")
+          .map((_, i) => `<button class="xo-cell" data-i="${i}"></button>`)
+          .join("")}
+      </div>
+    </div>
+  `;
+
+  document.getElementById("xo-solo").onclick = iniciarXOCPU;
+  document.getElementById("xo-online").onclick = iniciarXOOnline;
+}
+
+// ==========================
+// MODO CPU
+// ==========================
+function iniciarXOCPU() {
+  modoXO = "cpu";
+  tableroXO = Array(9).fill("");
+  turnoXO = "X";
+  juegoXOActivo = true;
+  mostrarInfo("Tu turno ❌");
+
+  actualizarTableroCPU();
+}
+
+function actualizarTableroCPU() {
+  document.querySelectorAll(".xo-cell").forEach((btn, i) => {
+    btn.textContent = tableroXO[i];
+    btn.onclick = () => jugarCPU(i);
+  });
+}
+
+function jugarCPU(i) {
+  if (!juegoXOActivo || tableroXO[i]) return;
+
+  tableroXO[i] = "X";
+  if (verificarFinXO()) return;
+
+  // CPU juega
+  const libres = tableroXO
+    .map((v, i) => (v === "" ? i : null))
+    .filter((v) => v !== null);
+
+  const cpuMove = libres[Math.floor(Math.random() * libres.length)];
+  tableroXO[cpuMove] = "O";
+
+  verificarFinXO();
+  actualizarTableroCPU();
+}
+
+function verificarFinXO() {
+  const combos = [
+    [0,1,2],[3,4,5],[6,7,8],
+    [0,3,6],[1,4,7],[2,5,8],
+    [0,4,8],[2,4,6]
+  ];
+
+  for (let [a,b,c] of combos) {
+    if (
+      tableroXO[a] &&
+      tableroXO[a] === tableroXO[b] &&
+      tableroXO[a] === tableroXO[c]
+    ) {
+      mostrarInfo(`🏆 Ganó ${tableroXO[a]}`);
+      juegoXOActivo = false;
+      return true;
+    }
+  }
+
+  if (!tableroXO.includes("")) {
+    mostrarInfo("🤝 Empate");
+    juegoXOActivo = false;
+    return true;
+  }
+
+  return false;
+}
+
+// ==========================
+// MODO ONLINE
+// ==========================
+function iniciarXOOnline() {
+  modoXO = "online";
 
   gameScreen.innerHTML = `
     <div class="xo-container">
@@ -82,7 +195,7 @@ function renderXO() {
       <div class="xo-board">
         ${Array(9)
           .fill("")
-          .map((_, i) => `<button class="xo-cell" data-index="${i}"></button>`)
+          .map((_, i) => `<button class="xo-cell" data-i="${i}"></button>`)
           .join("")}
       </div>
     </div>
@@ -93,72 +206,72 @@ function renderXO() {
 }
 
 async function crearSala() {
-  jugador = "X";
-  const salaRef = await db.collection("salas").add({
+  jugadorOnline = "X";
+
+  const ref = await addDoc(collection(db, "salas"), {
     tablero: Array(9).fill(""),
-    turno: "X",
-    estado: "jugando"
+    turno: "X"
   });
 
-  salaId = salaRef.id;
+  salaId = ref.id;
   document.getElementById("codigo-sala").value = salaId;
+  mostrarInfo("Sala creada. Eres ❌");
   escucharSala();
-  mostrarInfo(`Sala creada. Eres ❌`);
 }
 
 async function unirseSala() {
   const codigo = document.getElementById("codigo-sala").value.trim();
   if (!codigo) return;
 
-  const salaRef = db.collection("salas").doc(codigo);
-  const doc = await salaRef.get();
+  const ref = doc(db, "salas", codigo);
+  const snap = await getDoc(ref);
 
-  if (!doc.exists) {
+  if (!snap.exists()) {
     mostrarInfo("❌ Sala no encontrada");
     return;
   }
 
-  jugador = "O";
+  jugadorOnline = "O";
   salaId = codigo;
+  mostrarInfo("Unido a la sala. Eres ⭕");
   escucharSala();
-  mostrarInfo(`Unido a la sala. Eres ⭕`);
 }
 
 function escucharSala() {
   if (unsubSala) unsubSala();
 
-  unsubSala = db
-    .collection("salas")
-    .doc(salaId)
-    .onSnapshot((doc) => {
-      const data = doc.data();
-      actualizarTablero(data.tablero, data.turno);
-    });
-}
-
-function actualizarTablero(tablero, turnoActual) {
-  document.querySelectorAll(".xo-cell").forEach((btn, i) => {
-    btn.textContent = tablero[i];
-    btn.onclick = () => jugarXO(i, tablero, turnoActual);
+  const ref = doc(db, "salas", salaId);
+  unsubSala = onSnapshot(ref, (snap) => {
+    const data = snap.data();
+    actualizarTableroOnline(data.tablero, data.turno);
   });
 }
 
-function jugarXO(i, tablero, turnoActual) {
-  if (tablero[i] !== "") return;
-  if (turnoActual !== jugador) return;
+function actualizarTableroOnline(tablero, turno) {
+  document.querySelectorAll(".xo-cell").forEach((btn, i) => {
+    btn.textContent = tablero[i];
+    btn.onclick = () => jugarOnline(i, tablero, turno);
+  });
+}
 
-  tablero[i] = jugador;
-  const nuevoTurno = jugador === "X" ? "O" : "X";
+async function jugarOnline(i, tablero, turno) {
+  if (tablero[i] || turno !== jugadorOnline) return;
 
-  db.collection("salas").doc(salaId).update({
+  tablero[i] = jugadorOnline;
+  const nuevoTurno = jugadorOnline === "X" ? "O" : "X";
+
+  await updateDoc(doc(db, "salas", salaId), {
     tablero,
     turno: nuevoTurno
   });
 }
 
+// ==========================
 function mostrarInfo(texto) {
-  document.getElementById("xo-info").textContent = texto;
+  const el = document.getElementById("xo-info");
+  if (el) el.textContent = texto;
 }
+
 
 
 // ==========================
