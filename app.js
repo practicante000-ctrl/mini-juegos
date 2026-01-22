@@ -60,128 +60,106 @@ function saveNumber(key, value) {
 }
 
 // ==========================
-// ✅ XO (Tres en raya) + STATS
+// ❌⭕ XO ONLINE (Firestore)
 // ==========================
-let tablero = Array(9).fill("");
-let turno = "X";
-let juegoTerminado = false;
-let mensaje = "";
-
-// stats XO
-let xoWinsX = loadNumber("xoWinsX", 0);
-let xoWinsO = loadNumber("xoWinsO", 0);
-let xoDraws = loadNumber("xoDraws", 0);
+let salaId = null;
+let jugador = null;
+let unsubSala = null;
 
 function renderXO() {
-  gameTitle.textContent = "❌⭕ XO (Tres en raya)";
+  gameTitle.textContent = "❌⭕ XO Online";
 
   gameScreen.innerHTML = `
     <div class="xo-container">
-      <div class="stats">
-        <span>❌ X: <b id="xo-wx">${xoWinsX}</b></span>
-        <span>⭕ O: <b id="xo-wo">${xoWinsO}</b></span>
-        <span>🤝 Empates: <b id="xo-d">${xoDraws}</b></span>
+      <div class="xo-online">
+        <button id="crear-sala">➕ Crear sala</button>
+        <input id="codigo-sala" placeholder="Código de sala" />
+        <button id="unirse-sala">🔗 Unirse</button>
       </div>
 
-      <p class="xo-turno">Turno: <b>${turno}</b></p>
+      <p id="xo-info" class="xo-mensaje"></p>
 
       <div class="xo-board">
-        ${tablero
-          .map(
-            (celda, i) =>
-              `<button class="xo-cell" data-index="${i}">${celda}</button>`
-          )
+        ${Array(9)
+          .fill("")
+          .map((_, i) => `<button class="xo-cell" data-index="${i}"></button>`)
           .join("")}
-      </div>
-
-      <p class="xo-mensaje">${mensaje}</p>
-
-      <div style="display:flex; gap:10px;">
-        <button class="xo-reset" id="xo-reset">🔄 Reiniciar</button>
-        <button class="xo-reset" id="xo-reset-stats">🧹 Reset Stats</button>
       </div>
     </div>
   `;
 
-  document.querySelectorAll(".xo-cell").forEach((btn) => {
-    btn.addEventListener("click", manejarClickXO);
+  document.getElementById("crear-sala").onclick = crearSala;
+  document.getElementById("unirse-sala").onclick = unirseSala;
+}
+
+async function crearSala() {
+  jugador = "X";
+  const salaRef = await db.collection("salas").add({
+    tablero: Array(9).fill(""),
+    turno: "X",
+    estado: "jugando"
   });
 
-  document.getElementById("xo-reset").addEventListener("click", resetXO);
+  salaId = salaRef.id;
+  document.getElementById("codigo-sala").value = salaId;
+  escucharSala();
+  mostrarInfo(`Sala creada. Eres ❌`);
+}
 
-  document.getElementById("xo-reset-stats").addEventListener("click", () => {
-    xoWinsX = 0;
-    xoWinsO = 0;
-    xoDraws = 0;
-    saveNumber("xoWinsX", xoWinsX);
-    saveNumber("xoWinsO", xoWinsO);
-    saveNumber("xoDraws", xoDraws);
-    renderXO();
+async function unirseSala() {
+  const codigo = document.getElementById("codigo-sala").value.trim();
+  if (!codigo) return;
+
+  const salaRef = db.collection("salas").doc(codigo);
+  const doc = await salaRef.get();
+
+  if (!doc.exists) {
+    mostrarInfo("❌ Sala no encontrada");
+    return;
+  }
+
+  jugador = "O";
+  salaId = codigo;
+  escucharSala();
+  mostrarInfo(`Unido a la sala. Eres ⭕`);
+}
+
+function escucharSala() {
+  if (unsubSala) unsubSala();
+
+  unsubSala = db
+    .collection("salas")
+    .doc(salaId)
+    .onSnapshot((doc) => {
+      const data = doc.data();
+      actualizarTablero(data.tablero, data.turno);
+    });
+}
+
+function actualizarTablero(tablero, turnoActual) {
+  document.querySelectorAll(".xo-cell").forEach((btn, i) => {
+    btn.textContent = tablero[i];
+    btn.onclick = () => jugarXO(i, tablero, turnoActual);
   });
 }
 
-function manejarClickXO(e) {
-  const index = e.target.dataset.index;
+function jugarXO(i, tablero, turnoActual) {
+  if (tablero[i] !== "") return;
+  if (turnoActual !== jugador) return;
 
-  if (juegoTerminado) return;
-  if (tablero[index] !== "") return;
+  tablero[i] = jugador;
+  const nuevoTurno = jugador === "X" ? "O" : "X";
 
-  tablero[index] = turno;
-
-  verificarGanador();
-
-  if (!juegoTerminado) {
-    turno = turno === "X" ? "O" : "X";
-    mensaje = "";
-  }
-
-  renderXO();
+  db.collection("salas").doc(salaId).update({
+    tablero,
+    turno: nuevoTurno
+  });
 }
 
-function verificarGanador() {
-  const combos = [
-    [0, 1, 2],
-    [3, 4, 5],
-    [6, 7, 8],
-    [0, 3, 6],
-    [1, 4, 7],
-    [2, 5, 8],
-    [0, 4, 8],
-    [2, 4, 6],
-  ];
-
-  for (let [a, b, c] of combos) {
-    if (tablero[a] && tablero[a] === tablero[b] && tablero[a] === tablero[c]) {
-      juegoTerminado = true;
-
-      if (tablero[a] === "X") {
-        xoWinsX++;
-        saveNumber("xoWinsX", xoWinsX);
-      } else {
-        xoWinsO++;
-        saveNumber("xoWinsO", xoWinsO);
-      }
-
-      mensaje = `🏆 ¡Ganó ${tablero[a]}!`;
-      return;
-    }
-  }
-
-  if (!tablero.includes("")) {
-    juegoTerminado = true;
-    xoDraws++;
-    saveNumber("xoDraws", xoDraws);
-    mensaje = "🤝 ¡Empate!";
-  }
+function mostrarInfo(texto) {
+  document.getElementById("xo-info").textContent = texto;
 }
 
-function resetXO() {
-  tablero = Array(9).fill("");
-  turno = "X";
-  juegoTerminado = false;
-  mensaje = "";
-  renderXO();
-}
 
 // ==========================
 // 🐍 SNAKE (Culebrita) + STATS
