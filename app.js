@@ -74,7 +74,7 @@ import {
 const db = window.db;
 
 // ==========================
-// ❌⭕ XO (CPU + ONLINE) ✅ LIMPIO
+// ❌⭕ XO (CPU + ONLINE) ✅ FIX + LINEA GANADORA
 // ==========================
 
 // LOCAL CPU
@@ -98,17 +98,24 @@ function renderXO() {
 
       <p id="xo-info" class="xo-mensaje"></p>
 
-      <div class="xo-board">
-        ${Array(9)
-          .fill("")
-          .map((_, i) => `<button class="xo-cell" data-i="${i}"></button>`)
-          .join("")}
+      <div class="xo-board-wrapper">
+        <div class="xo-board">
+          ${Array(9)
+            .fill("")
+            .map((_, i) => `<button class="xo-cell" data-i="${i}"></button>`)
+            .join("")}
+        </div>
+        <div class="xo-win-line" id="xo-win-line"></div>
       </div>
     </div>
   `;
 
+  ocultarLineaGanadora(); // 
+
   document.getElementById("xo-solo").onclick = iniciarXOCPU;
   document.getElementById("xo-online").onclick = iniciarXOOnline;
+  
+
 }
 
 // ✅ CPU
@@ -118,6 +125,7 @@ function iniciarXOCPU() {
   tableroXO = Array(9).fill("");
   juegoXOActivo = true;
 
+  ocultarLineaGanadora();
   mostrarInfoXO("Tu turno ❌ (X)");
   actualizarTableroCPU();
 }
@@ -133,7 +141,7 @@ function jugarCPU(i) {
   if (!juegoXOActivo || tableroXO[i]) return;
 
   tableroXO[i] = "X";
-  actualizarTableroCPU(); // ✅ se dibuja la jugada
+  actualizarTableroCPU();
 
   if (verificarFinXOCPU()) return;
 
@@ -144,14 +152,16 @@ function jugarCPU(i) {
   const cpuMove = libres[Math.floor(Math.random() * libres.length)];
   tableroXO[cpuMove] = "O";
 
-  actualizarTableroCPU(); // ✅ se dibuja la jugada de la CPU
+  actualizarTableroCPU();
   verificarFinXOCPU();
 }
 
 function verificarFinXOCPU() {
   const ganador = calcularGanador(tableroXO);
+
   if (ganador) {
-    mostrarInfoXO(`🏆 Ganó ${ganador}`);
+    mostrarInfoXO(`🏆 Ganó ${ganador.jugador}`);
+    mostrarLineaGanadora(ganador.linea);
     juegoXOActivo = false;
     return true;
   }
@@ -180,15 +190,19 @@ function iniciarXOOnline() {
 
       <p id="xo-info" class="xo-mensaje"></p>
 
-      <div class="xo-board">
-        ${Array(9)
-          .fill("")
-          .map((_, i) => `<button class="xo-cell" data-i="${i}"></button>`)
-          .join("")}
+      <div class="xo-board-wrapper">
+        <div class="xo-board">
+          ${Array(9)
+            .fill("")
+            .map((_, i) => `<button class="xo-cell" data-i="${i}"></button>`)
+            .join("")}
+        </div>
+        <div class="xo-win-line" id="xo-win-line"></div>
       </div>
     </div>
   `;
 
+  ocultarLineaGanadora();
   document.getElementById("crear-sala").onclick = crearSalaOnline;
   document.getElementById("unirse-sala").onclick = unirseSalaOnline;
 
@@ -201,8 +215,6 @@ function generarCodigo4Digitos() {
 
 async function crearSalaOnline() {
   salaCodigo = generarCodigo4Digitos();
-
-  // creador aleatorio: X o O
   jugadorOnline = Math.random() < 0.5 ? "X" : "O";
 
   const salaRef = doc(db, "salas", salaCodigo);
@@ -212,14 +224,15 @@ async function crearSalaOnline() {
 
   await setDoc(salaRef, {
     tablero: Array(9).fill(""),
-    turno: "X", // XO siempre empieza con X
+    turno: "X",
     creador: jugadorOnline,
     estado: "jugando",
   });
 
   document.getElementById("codigo-sala").value = salaCodigo;
-  mostrarInfoXO(`Sala creada ✅ Código: ${salaCodigo} | Tú eres ${jugadorOnline}`);
+  ocultarLineaGanadora();
 
+  mostrarInfoXO(`Sala creada ✅ Código: ${salaCodigo} | Tú eres ${jugadorOnline}`);
   escucharSalaOnline();
 }
 
@@ -244,7 +257,9 @@ async function unirseSalaOnline() {
   const data = snap.data();
   jugadorOnline = data.creador === "X" ? "O" : "X";
 
+  ocultarLineaGanadora();
   mostrarInfoXO(`Unido ✅ Código: ${salaCodigo} | Tú eres ${jugadorOnline}`);
+
   escucharSalaOnline();
 }
 
@@ -262,8 +277,12 @@ function escucharSalaOnline() {
 
     if (data.estado !== "jugando") {
       if (data.estado.startsWith("gano_")) {
-        const g = data.estado.split("_")[1];
+        const partes = data.estado.split("_");
+        const g = partes[1];
+        const linea = partes[2];
+
         mostrarInfoXO(`🏆 Ganó ${g}`);
+        mostrarLineaGanadora(linea);
       } else if (data.estado === "empate") {
         mostrarInfoXO("🤝 Empate");
       }
@@ -296,13 +315,16 @@ async function jugarOnline(i, tablero, turnoActual) {
   const empate = !nuevoTablero.includes("") && !ganador;
 
   const nuevoTurno = jugadorOnline === "X" ? "O" : "X";
-
   const salaRef = doc(db, "salas", salaCodigo);
 
   await updateDoc(salaRef, {
     tablero: nuevoTablero,
     turno: nuevoTurno,
-    estado: ganador ? `gano_${ganador}` : empate ? "empate" : "jugando",
+    estado: ganador
+      ? `gano_${ganador.jugador}_${ganador.linea}`
+      : empate
+      ? "empate"
+      : "jugando",
   });
 }
 
@@ -315,19 +337,22 @@ function limpiarListenerOnlineXO() {
 
 function calcularGanador(tablero) {
   const combos = [
-    [0, 1, 2],
-    [3, 4, 5],
-    [6, 7, 8],
-    [0, 3, 6],
-    [1, 4, 7],
-    [2, 5, 8],
-    [0, 4, 8],
-    [2, 4, 6],
+    { c: [0, 1, 2], l: "row0" },
+    { c: [3, 4, 5], l: "row1" },
+    { c: [6, 7, 8], l: "row2" },
+
+    { c: [0, 3, 6], l: "col0" },
+    { c: [1, 4, 7], l: "col1" },
+    { c: [2, 5, 8], l: "col2" },
+
+    { c: [0, 4, 8], l: "diag0" },
+    { c: [2, 4, 6], l: "diag1" },
   ];
 
-  for (let [a, b, c] of combos) {
+  for (let obj of combos) {
+    const [a, b, c] = obj.c;
     if (tablero[a] && tablero[a] === tablero[b] && tablero[a] === tablero[c]) {
-      return tablero[a];
+      return { jugador: tablero[a], linea: obj.l };
     }
   }
   return null;
@@ -337,6 +362,88 @@ function mostrarInfoXO(texto) {
   const el = document.getElementById("xo-info");
   if (el) el.textContent = texto;
 }
+
+function ocultarLineaGanadora() {
+  const line = document.getElementById("xo-win-line");
+  if (!line) return;
+  line.style.display = "none";
+  line.innerHTML = "";
+}
+
+function mostrarLineaGanadora(tipo) {
+  const line = document.getElementById("xo-win-line");
+  if (!line) return;
+
+  line.style.display = "block";
+  line.innerHTML = "";
+
+  const l = document.createElement("div");
+  l.className = "win-line";
+
+  // filas
+  if (tipo === "row0") {
+    l.style.width = "100%";
+    l.style.height = "6px";
+    l.style.left = "0";
+    l.style.top = "16%";
+  } else if (tipo === "row1") {
+    l.style.width = "100%";
+    l.style.height = "6px";
+    l.style.left = "0";
+    l.style.top = "50%";
+  } else if (tipo === "row2") {
+    l.style.width = "100%";
+    l.style.height = "6px";
+    l.style.left = "0";
+    l.style.top = "84%";
+  }
+
+  // columnas
+  if (tipo === "col0") {
+    l.style.width = "6px";
+    l.style.height = "100%";
+    l.style.left = "16%";
+    l.style.top = "0";
+  } else if (tipo === "col1") {
+    l.style.width = "6px";
+    l.style.height = "100%";
+    l.style.left = "50%";
+    l.style.top = "0";
+  } else if (tipo === "col2") {
+    l.style.width = "6px";
+    l.style.height = "100%";
+    l.style.left = "84%";
+    l.style.top = "0";
+  }
+
+  // diagonales
+  if (tipo === "diag0") {
+    l.style.width = "140%";
+    l.style.height = "6px";
+    l.style.left = "-20%";
+    l.style.top = "50%";
+    l.style.transform = "rotate(45deg)";
+  } else if (tipo === "diag1") {
+    l.style.width = "140%";
+    l.style.height = "6px";
+    l.style.left = "-20%";
+    l.style.top = "50%";
+    l.style.transform = "rotate(-45deg)";
+  }
+
+  line.appendChild(l);
+}
+
+/* ------------------------------
+   🐍 Snake, RPS, Adivina, Memoria
+   ✅ No tocado (copias tu resto tal cual)
+------------------------------ */
+
+/* ⚠️ IMPORTANTÍSIMO:
+   Aquí debes pegar EXACTAMENTE tu resto del código (Snake, RPS, etc.)
+   desde: "// ========================== 🐍 SNAKE"
+   porque lo dejé intacto en tu versión original.
+*/
 
 // ==========================
 // 🐍 SNAKE (Culebrita) + STATS

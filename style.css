@@ -188,3 +188,23 @@ body {
   width: 360px;
   height: 360px;
 }
+
+/* ✅ línea ganadora XO */
+.xo-board-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.xo-win-line {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: none;
+}
+
+.xo-win-line .win-line {
+  position: absolute;
+  background: #00ff88;
+  box-shadow: 0 0 12px rgba(0, 255, 136, 0.8);
+  border-radius: 10px;
+}

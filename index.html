@@ -1,64 +1,55 @@
 <!DOCTYPE html>
 <html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Mini Juegos</title>
-    <link rel="stylesheet" href="style.css" />
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini Juegos</title>
+  <link rel="stylesheet" href="style.css" />
 
-    <!-- ✅ Firebase (modo module) -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
-  import { getFirestore } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js";
+  <!-- Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-app.js";
+    import { getFirestore } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js";
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyAB-mR1kXlVuwnThGcSNwc3Dcn2cxk1kh4",
-    authDomain: "mini-juegos-online-12cc4.firebaseapp.com",
-    projectId: "mini-juegos-online-12cc4",
-    storageBucket: "mini-juegos-online-12cc4.firebasestorage.app",
-    messagingSenderId: "13503224265",
-    appId: "1:13503224265:web:463221e19aaf0519867018",
-    measurementId: "G-WBNLBXHL9H"
-  };
+    const firebaseConfig = {
+      apiKey: "AIzaSyAB-mR1kXlVuwnThGcSNwc3Dcn2cxk1kh4",
+      authDomain: "mini-juegos-online-12cc4.firebaseapp.com",
+      projectId: "mini-juegos-online-12cc4",
+      storageBucket: "mini-juegos-online-12cc4.firebasestorage.app",
+      messagingSenderId: "13503224265",
+      appId: "1:13503224265:web:463221e19aaf0519867018",
+      measurementId: "G-WBNLBXHL9H"
+    };
 
-  const app = initializeApp(firebaseConfig);
+    const app = initializeApp(firebaseConfig);
+    window.db = getFirestore(app);
+  </script>
+</head>
 
-  // ✅ Firestore listo para usar desde app.js
-  window.db = getFirestore(app);
-</script>
-  </head>
+<body>
+  <header class="topbar">
+    <h1>🎮 Mini Juegos</h1>
+    <p>Elige un juego del menú</p>
+  </header>
 
-  <body>
-    <header class="topbar">
-      <h1>🎮 Mini Juegos</h1>
-      <p>Elige un juego del menú</p>
-    </header>
+  <main class="container">
+    <section class="menu">
+      <button id="btn-xo">❌⭕ XO (Tres en raya)</button>
+      <button id="btn-snake">🐍 Culebrita</button>
+      <button id="btn-rps">✊✋✌️ Piedra Papel Tijera</button>
+      <button id="btn-num">🔢 Adivina el número</button>
+      <button id="btn-memo">🧠 Memoria</button>
+      <button id="btn-prox">⭐ Próximamente</button>
+    </section>
 
-    <main class="container">
-      <!-- MENÚ -->
-      <section class="menu">
-        <button id="btn-xo">❌⭕ XO (Tres en raya)</button>
-        <button id="btn-snake">🐍 Culebrita</button>
+    <section class="game-area">
+      <h2 id="game-title">Selecciona un juego</h2>
+      <div id="game-screen">
+        <p class="placeholder">Aquí aparecerá el juego cuando lo selecciones ✅</p>
+      </div>
+    </section>
+  </main>
 
-        <button id="btn-rps">✊✋✌️ Piedra Papel Tijera</button>
-        <button id="btn-num">🔢 Adivina el número</button>
-        <button id="btn-memo">🧠 Memoria</button>
-
-        <button id="btn-prox">⭐ Próximamente</button>
-      </section>
-
-      <!-- ÁREA DEL JUEGO -->
-      <section class="game-area">
-        <h2 id="game-title">Selecciona un juego</h2>
-
-        <div id="game-screen">
-          <p class="placeholder">
-            Aquí aparecerá el juego cuando lo selecciones ✅
-          </p>
-        </div>
-      </section>
-    </main>
-
-    <script type="module" src="app.js"></script>
-  </body>
+  <script type="module" src="app.js"></script>
+</body>
 </html>
