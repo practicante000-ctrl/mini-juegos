@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mini Juegos</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+
+  <body>
+    <header class="topbar">
+      <h1>🎮 Mini Juegos</h1>
+      <p>Elige un juego del menú</p>
+    </header>
+
+    <main class="container">
+      <!-- MENÚ -->
+      <section class="menu">
+        <button id="btn-xo">❌⭕ XO (Tres en raya)</button>
+        <button id="btn-snake">🐍 Culebrita</button>
+
+        <button id="btn-rps">✊✋✌️ Piedra Papel Tijera</button>
+        <button id="btn-num">🔢 Adivina el número</button>
+        <button id="btn-memo">🧠 Memoria</button>
+
+        <button id="btn-prox">⭐ Próximamente</button>
+      </section>
+
+      <!-- ÁREA DEL JUEGO -->
+      <section class="game-area">
+        <h2 id="game-title">Selecciona un juego</h2>
+
+        <div id="game-screen">
+          <p class="placeholder">
+            Aquí aparecerá el juego cuando lo selecciones ✅
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

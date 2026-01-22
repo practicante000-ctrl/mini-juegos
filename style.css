@@ -1,0 +1,190 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: Arial, sans-serif;
+}
+
+/* ✅ Pantalla fija SIN SCROLL */
+body {
+  background: #111;
+  color: white;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.topbar {
+  text-align: center;
+  padding: 20px;
+  background: #1d1d1d;
+  border-bottom: 2px solid #333;
+}
+
+/* ✅ Contenido ocupa el resto de la pantalla */
+.container {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 20px;
+  padding: 20px;
+  height: calc(100vh - 100px);
+}
+
+/* ✅ Menú con scroll si crece */
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 5px;
+}
+
+/* ✅ Botones menú mejorados */
+.menu button {
+  padding: 14px 14px;
+  border: 2px solid #333;
+  border-radius: 14px;
+  background: #1b1b1b;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  transition: 0.2s;
+  text-align: left;
+}
+
+.menu button:hover {
+  background: #2b2b2b;
+  border-color: #444;
+}
+
+/* ✅ Seleccionado (activo) */
+.menu button.active {
+  background: #2d2d2d;
+  border-color: #00ff88;
+  box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.2);
+}
+
+/* ✅ Área del juego fija */
+.game-area {
+  background: #1d1d1d;
+  padding: 20px;
+  border-radius: 12px;
+  border: 2px solid #333;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ✅ título más arriba */
+#game-title {
+  margin-bottom: 6px;
+  margin-top: -8px;
+  flex: 0 0 auto;
+  font-size: 22px;
+}
+
+/* ✅ Pantalla del juego */
+#game-screen {
+  background: #0b0b0b;
+  border-radius: 12px;
+  padding: 12px;
+  flex: 1;
+  overflow: hidden;
+
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.placeholder {
+  color: #aaa;
+  text-align: center;
+}
+
+/* ✅ contenedores de juegos */
+.xo-container,
+.snake-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+/* -------------------- */
+/* ✅ Estilos del XO */
+/* -------------------- */
+.xo-turno {
+  font-size: 18px;
+}
+
+.xo-board {
+  display: grid;
+  grid-template-columns: repeat(3, 90px);
+  grid-template-rows: repeat(3, 90px);
+  gap: 10px;
+}
+
+.xo-cell {
+  width: 90px;
+  height: 90px;
+  font-size: 32px;
+  font-weight: bold;
+  border-radius: 12px;
+  border: 2px solid #333;
+  background: #222;
+  color: white;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.xo-cell:hover {
+  background: #444;
+}
+
+.xo-reset {
+  padding: 12px 18px;
+  border: none;
+  border-radius: 10px;
+  background: #333;
+  color: white;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.xo-reset:hover {
+  background: #555;
+}
+
+.xo-mensaje {
+  font-size: 18px;
+  color: #ddd;
+}
+
+/* ✅ mini tablero de estadísticas (opcional) */
+.stats {
+  width: 100%;
+  max-width: 420px;
+  border: 2px solid #222;
+  background: #141414;
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #ccc;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 14px;
+}
+
+/* -------------------- */
+/* 🐍 Estilos Snake */
+/* -------------------- */
+#snake-canvas {
+  background: #000;
+  border: 2px solid #333;
+  border-radius: 12px;
+  width: 360px;
+  height: 360px;
+}
