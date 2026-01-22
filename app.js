@@ -60,39 +60,40 @@ function saveNumber(key, value) {
 }
 
 // ==========================
-// ❌⭕ XO COMPLETO (CPU + ONLINE)
+// 🔥 Firestore imports (v12 module)
 // ==========================
-
 import {
-  collection,
-  addDoc,
   doc,
   getDoc,
+  setDoc,
   updateDoc,
-  onSnapshot
+  onSnapshot,
 } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js";
 
-let modoXO = null; // "cpu" | "online"
+// db viene del index.html: window.db = getFirestore(app);
+const db = window.db;
+
+// ==========================
+// ❌⭕ XO (CPU + ONLINE) ✅ LIMPIO
+// ==========================
+
+// LOCAL CPU
 let tableroXO = Array(9).fill("");
-let turnoXO = "X";
 let juegoXOActivo = false;
 
 // ONLINE
-let salaId = null;
-let jugadorOnline = null;
+let salaCodigo = null; // "1234"
+let jugadorOnline = null; // "X" o "O"
 let unsubSala = null;
 
-// ==========================
-// Render principal XO
-// ==========================
 function renderXO() {
   gameTitle.textContent = "❌⭕ XO";
 
   gameScreen.innerHTML = `
     <div class="xo-container">
-      <div class="xo-modos">
-        <button id="xo-solo">🤖 Jugar solo</button>
-        <button id="xo-online">🌍 Jugar online</button>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+        <button class="xo-reset" id="xo-solo">🤖 Jugar solo</button>
+        <button class="xo-reset" id="xo-online">🌍 Jugar online</button>
       </div>
 
       <p id="xo-info" class="xo-mensaje"></p>
@@ -110,16 +111,14 @@ function renderXO() {
   document.getElementById("xo-online").onclick = iniciarXOOnline;
 }
 
-// ==========================
-// MODO CPU
-// ==========================
+// ✅ CPU
 function iniciarXOCPU() {
-  modoXO = "cpu";
-  tableroXO = Array(9).fill("");
-  turnoXO = "X";
-  juegoXOActivo = true;
-  mostrarInfo("Tu turno ❌");
+  limpiarListenerOnlineXO();
 
+  tableroXO = Array(9).fill("");
+  juegoXOActivo = true;
+
+  mostrarInfoXO("Tu turno ❌ (X)");
   actualizarTableroCPU();
 }
 
@@ -134,41 +133,31 @@ function jugarCPU(i) {
   if (!juegoXOActivo || tableroXO[i]) return;
 
   tableroXO[i] = "X";
-  if (verificarFinXO()) return;
+  actualizarTableroCPU(); // ✅ se dibuja la jugada
 
-  // CPU juega
+  if (verificarFinXOCPU()) return;
+
   const libres = tableroXO
-    .map((v, i) => (v === "" ? i : null))
+    .map((v, idx) => (v === "" ? idx : null))
     .filter((v) => v !== null);
 
   const cpuMove = libres[Math.floor(Math.random() * libres.length)];
   tableroXO[cpuMove] = "O";
 
-  verificarFinXO();
-  actualizarTableroCPU();
+  actualizarTableroCPU(); // ✅ se dibuja la jugada de la CPU
+  verificarFinXOCPU();
 }
 
-function verificarFinXO() {
-  const combos = [
-    [0,1,2],[3,4,5],[6,7,8],
-    [0,3,6],[1,4,7],[2,5,8],
-    [0,4,8],[2,4,6]
-  ];
-
-  for (let [a,b,c] of combos) {
-    if (
-      tableroXO[a] &&
-      tableroXO[a] === tableroXO[b] &&
-      tableroXO[a] === tableroXO[c]
-    ) {
-      mostrarInfo(`🏆 Ganó ${tableroXO[a]}`);
-      juegoXOActivo = false;
-      return true;
-    }
+function verificarFinXOCPU() {
+  const ganador = calcularGanador(tableroXO);
+  if (ganador) {
+    mostrarInfoXO(`🏆 Ganó ${ganador}`);
+    juegoXOActivo = false;
+    return true;
   }
 
   if (!tableroXO.includes("")) {
-    mostrarInfo("🤝 Empate");
+    mostrarInfoXO("🤝 Empate");
     juegoXOActivo = false;
     return true;
   }
@@ -176,18 +165,17 @@ function verificarFinXO() {
   return false;
 }
 
-// ==========================
-// MODO ONLINE
-// ==========================
+// ✅ ONLINE
 function iniciarXOOnline() {
-  modoXO = "online";
+  limpiarListenerOnlineXO();
 
   gameScreen.innerHTML = `
     <div class="xo-container">
-      <div class="xo-online">
-        <button id="crear-sala">➕ Crear sala</button>
-        <input id="codigo-sala" placeholder="Código de sala" />
-        <button id="unirse-sala">🔗 Unirse</button>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+        <button class="xo-reset" id="crear-sala">➕ Crear sala</button>
+        <input id="codigo-sala" placeholder="Código 4 dígitos" inputmode="numeric"
+          style="padding:12px; border-radius:10px; border:2px solid #333; background:#111; color:white; width:180px;" />
+        <button class="xo-reset" id="unirse-sala">🔗 Unirse</button>
       </div>
 
       <p id="xo-info" class="xo-mensaje"></p>
@@ -201,78 +189,154 @@ function iniciarXOOnline() {
     </div>
   `;
 
-  document.getElementById("crear-sala").onclick = crearSala;
-  document.getElementById("unirse-sala").onclick = unirseSala;
+  document.getElementById("crear-sala").onclick = crearSalaOnline;
+  document.getElementById("unirse-sala").onclick = unirseSalaOnline;
+
+  mostrarInfoXO("Crea una sala o únete con un código ✅");
 }
 
-async function crearSala() {
-  jugadorOnline = "X";
+function generarCodigo4Digitos() {
+  return String(Math.floor(Math.random() * 9000) + 1000);
+}
 
-  const ref = await addDoc(collection(db, "salas"), {
+async function crearSalaOnline() {
+  salaCodigo = generarCodigo4Digitos();
+
+  // creador aleatorio: X o O
+  jugadorOnline = Math.random() < 0.5 ? "X" : "O";
+
+  const salaRef = doc(db, "salas", salaCodigo);
+
+  const existe = await getDoc(salaRef);
+  if (existe.exists()) return crearSalaOnline();
+
+  await setDoc(salaRef, {
     tablero: Array(9).fill(""),
-    turno: "X"
+    turno: "X", // XO siempre empieza con X
+    creador: jugadorOnline,
+    estado: "jugando",
   });
 
-  salaId = ref.id;
-  document.getElementById("codigo-sala").value = salaId;
-  mostrarInfo("Sala creada. Eres ❌");
-  escucharSala();
+  document.getElementById("codigo-sala").value = salaCodigo;
+  mostrarInfoXO(`Sala creada ✅ Código: ${salaCodigo} | Tú eres ${jugadorOnline}`);
+
+  escucharSalaOnline();
 }
 
-async function unirseSala() {
+async function unirseSalaOnline() {
   const codigo = document.getElementById("codigo-sala").value.trim();
-  if (!codigo) return;
 
-  const ref = doc(db, "salas", codigo);
-  const snap = await getDoc(ref);
-
-  if (!snap.exists()) {
-    mostrarInfo("❌ Sala no encontrada");
+  if (!codigo || codigo.length !== 4) {
+    mostrarInfoXO("❌ Pon un código de 4 números");
     return;
   }
 
-  jugadorOnline = "O";
-  salaId = codigo;
-  mostrarInfo("Unido a la sala. Eres ⭕");
-  escucharSala();
+  salaCodigo = codigo;
+
+  const salaRef = doc(db, "salas", salaCodigo);
+  const snap = await getDoc(salaRef);
+
+  if (!snap.exists()) {
+    mostrarInfoXO("❌ Sala no encontrada");
+    return;
+  }
+
+  const data = snap.data();
+  jugadorOnline = data.creador === "X" ? "O" : "X";
+
+  mostrarInfoXO(`Unido ✅ Código: ${salaCodigo} | Tú eres ${jugadorOnline}`);
+  escucharSalaOnline();
 }
 
-function escucharSala() {
-  if (unsubSala) unsubSala();
+function escucharSalaOnline() {
+  limpiarListenerOnlineXO();
 
-  const ref = doc(db, "salas", salaId);
-  unsubSala = onSnapshot(ref, (snap) => {
+  const salaRef = doc(db, "salas", salaCodigo);
+
+  unsubSala = onSnapshot(salaRef, (snap) => {
+    if (!snap.exists()) return;
+
     const data = snap.data();
+
     actualizarTableroOnline(data.tablero, data.turno);
+
+    if (data.estado !== "jugando") {
+      if (data.estado.startsWith("gano_")) {
+        const g = data.estado.split("_")[1];
+        mostrarInfoXO(`🏆 Ganó ${g}`);
+      } else if (data.estado === "empate") {
+        mostrarInfoXO("🤝 Empate");
+      }
+      return;
+    }
+
+    if (data.turno === jugadorOnline) {
+      mostrarInfoXO(`Tu turno (${jugadorOnline}) ✅`);
+    } else {
+      mostrarInfoXO(`Turno del rival (${data.turno})...`);
+    }
   });
 }
 
-function actualizarTableroOnline(tablero, turno) {
+function actualizarTableroOnline(tablero, turnoActual) {
   document.querySelectorAll(".xo-cell").forEach((btn, i) => {
     btn.textContent = tablero[i];
-    btn.onclick = () => jugarOnline(i, tablero, turno);
+    btn.onclick = () => jugarOnline(i, tablero, turnoActual);
   });
 }
 
-async function jugarOnline(i, tablero, turno) {
-  if (tablero[i] || turno !== jugadorOnline) return;
+async function jugarOnline(i, tablero, turnoActual) {
+  if (tablero[i] !== "") return;
+  if (turnoActual !== jugadorOnline) return;
 
-  tablero[i] = jugadorOnline;
+  const nuevoTablero = [...tablero];
+  nuevoTablero[i] = jugadorOnline;
+
+  const ganador = calcularGanador(nuevoTablero);
+  const empate = !nuevoTablero.includes("") && !ganador;
+
   const nuevoTurno = jugadorOnline === "X" ? "O" : "X";
 
-  await updateDoc(doc(db, "salas", salaId), {
-    tablero,
-    turno: nuevoTurno
+  const salaRef = doc(db, "salas", salaCodigo);
+
+  await updateDoc(salaRef, {
+    tablero: nuevoTablero,
+    turno: nuevoTurno,
+    estado: ganador ? `gano_${ganador}` : empate ? "empate" : "jugando",
   });
 }
 
-// ==========================
-function mostrarInfo(texto) {
+function limpiarListenerOnlineXO() {
+  if (unsubSala) {
+    unsubSala();
+    unsubSala = null;
+  }
+}
+
+function calcularGanador(tablero) {
+  const combos = [
+    [0, 1, 2],
+    [3, 4, 5],
+    [6, 7, 8],
+    [0, 3, 6],
+    [1, 4, 7],
+    [2, 5, 8],
+    [0, 4, 8],
+    [2, 4, 6],
+  ];
+
+  for (let [a, b, c] of combos) {
+    if (tablero[a] && tablero[a] === tablero[b] && tablero[a] === tablero[c]) {
+      return tablero[a];
+    }
+  }
+  return null;
+}
+
+function mostrarInfoXO(texto) {
   const el = document.getElementById("xo-info");
   if (el) el.textContent = texto;
 }
-
-
 
 // ==========================
 // 🐍 SNAKE (Culebrita) + STATS
@@ -614,7 +678,9 @@ function jugarRPS(jugador) {
   saveNumber("rpsLosses", rpsLosses);
   saveNumber("rpsDraws", rpsDraws);
 
-  document.getElementById("rps-result").textContent = `Tú: ${jugador} | CPU: ${cpu} → ${resultado}`;
+  document.getElementById("rps-result").textContent =
+    `Tú: ${jugador} | CPU: ${cpu} → ${resultado}`;
+
   mostrarRPSStats();
 }
 
@@ -721,7 +787,6 @@ function intentarAdivina() {
       msg.textContent += " 🏆 ¡Nuevo récord!";
     }
 
-    // refrescar los récords arriba
     const b10 = document.getElementById("best10");
     const b50 = document.getElementById("best50");
     const b100 = document.getElementById("best100");
@@ -758,7 +823,6 @@ function mostrarMemoria() {
 }
 
 function iniciarMemoria() {
-  // 8 pares (16 cartas)
   const icons = ["🍎", "🍌", "🍇", "🍉", "🍒", "🍓", "🍍", "🥝"];
   memCards = [...icons, ...icons]
     .sort(() => Math.random() - 0.5)
@@ -808,7 +872,6 @@ function renderMemoria() {
     btn.textContent = isFlipped ? card.value : "❓";
 
     btn.addEventListener("click", () => flipCard(card.id));
-
     grid.appendChild(btn);
   });
 
@@ -823,7 +886,6 @@ function flipCard(id) {
 
   const card = memCards.find((c) => c.id === id);
   if (!card || card.matched) return;
-
   if (memFlipped.includes(id)) return;
 
   memFlipped.push(id);
@@ -858,7 +920,6 @@ function flipCard(id) {
 
       renderMemoria();
     } else {
-      // falló
       memLocked = true;
       beep(200, 0.08, "sawtooth");
 
@@ -955,5 +1016,4 @@ btnProx.addEventListener("click", () => {
   mostrarProx();
 });
 
-// ✅ al cargar, deja todo sin selección
 setActiveButton(null);
