@@ -208,3 +208,49 @@ body {
   box-shadow: 0 0 12px rgba(0, 255, 136, 0.8);
   border-radius: 10px;
 }
+
+/* ✅ RESPONSIVE CELULAR */
+@media (max-width: 900px) {
+  body {
+    overflow: auto;
+    height: auto;
+  }
+
+  .container {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .menu {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    overflow-y: visible;
+  }
+
+  .menu button {
+    width: 48%;
+    font-size: 14px;
+    padding: 12px;
+  }
+
+  .game-area {
+    height: auto;
+    min-height: 520px;
+  }
+
+  #snake-canvas {
+    width: 320px;
+    height: 320px;
+  }
+
+  .xo-board {
+    grid-template-columns: repeat(3, 80px);
+    grid-template-rows: repeat(3, 80px);
+  }
+
+  .xo-cell {
+    width: 80px;
+    height: 80px;
+  }
+}

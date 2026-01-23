@@ -1,1126 +1,495 @@
-// ==========================
-// 🎮 Referencias base
-// ==========================
-const btnXO = document.getElementById("btn-xo");
-const btnSnake = document.getElementById("btn-snake");
-const btnProx = document.getElementById("btn-prox");
-
-// nuevos juegos
-const btnRPS = document.getElementById("btn-rps");
-const btnNum = document.getElementById("btn-num");
-const btnMemo = document.getElementById("btn-memo");
-
-const gameTitle = document.getElementById("game-title");
-const gameScreen = document.getElementById("game-screen");
-
-// ==========================
-// ✅ Menú PRO (activo)
-// ==========================
-const menuButtons = [btnXO, btnSnake, btnRPS, btnNum, btnMemo, btnProx];
-
-function setActiveButton(activeBtn) {
-  menuButtons.forEach((b) => b.classList.remove("active"));
-  if (activeBtn) activeBtn.classList.add("active");
-}
-
-// ==========================
-// 🔊 Sonidos (sin archivos)
-// ==========================
-let audioCtx = null;
-
-function beep(frequency = 440, duration = 0.08, type = "sine") {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-
-  osc.type = type;
-  osc.frequency.value = frequency;
-  gain.gain.value = 0.08;
-
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-
-  osc.start();
-  osc.stop(audioCtx.currentTime + duration);
-}
-
-// ==========================
-// 💾 Storage helpers
-// ==========================
-function loadNumber(key, fallback = 0) {
-  const v = localStorage.getItem(key);
-  return v === null ? fallback : Number(v);
-}
-
-function saveNumber(key, value) {
-  localStorage.setItem(key, String(value));
-}
-
-// ==========================
-// 🔥 Firestore imports (v12 module)
-// ==========================
 import {
+  collection,
   doc,
-  getDoc,
   setDoc,
+  getDoc,
   updateDoc,
   onSnapshot,
+  deleteDoc
 } from "https://www.gstatic.com/firebasejs/12.8.0/firebase-firestore.js";
 
-// db viene del index.html: window.db = getFirestore(app);
-const db = window.db;
+/* ============================= */
+/* 🔢 UTILIDADES GENERALES */
+/* ============================= */
 
-// ==========================
-// ❌⭕ XO (CPU + ONLINE) ✅ FIX + LINEA GANADORA
-// ==========================
+function generarCodigoSala() {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+}
 
-// LOCAL CPU
+function elegirTurnoInicial() {
+  return Math.random() < 0.5 ? "X" : "O";
+}
+
+const combinacionesGanadoras = [
+  [0,1,2], [3,4,5], [6,7,8],
+  [0,3,6], [1,4,7], [2,5,8],
+  [0,4,8], [2,4,6]
+];
+
+/* ============================= */
+/* 🎮 VARIABLES XO */
+/* ============================= */
+
 let tableroXO = Array(9).fill("");
+let turnoXO = "X";
 let juegoXOActivo = false;
 
-// ONLINE
-let salaCodigo = null; // "1234"
-let jugadorOnline = null; // "X" o "O"
+let modoXO = "solo"; // solo | online
+let salaXO = null;
+let jugadorOnline = null;
 let unsubSala = null;
 
-function renderXO() {
-  gameTitle.textContent = "❌⭕ XO";
+/* ============================= */
+/* 🎮 BOTÓN MENÚ XO */
+/* ============================= */
 
-  gameScreen.innerHTML = `
+document.getElementById("btn-xo").addEventListener("click", cargarXO);
+
+function cargarXO() {
+  document.getElementById("game-title").innerText = "❌⭕ Tres en Raya";
+
+  document.getElementById("game-screen").innerHTML = `
     <div class="xo-container">
-      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
-        <button class="xo-reset" id="xo-solo">🤖 Jugar solo</button>
-        <button class="xo-reset" id="xo-online">🌍 Jugar online</button>
+      <div class="stats">
+        <button id="xo-solo">🤖 Solo</button>
+        <button id="xo-online">🌍 Online</button>
       </div>
 
-      <p id="xo-info" class="xo-mensaje"></p>
+      <div id="xo-opciones"></div>
+
+      <div class="xo-turno" id="xo-turno"></div>
 
       <div class="xo-board-wrapper">
-        <div class="xo-board">
-          ${Array(9)
-            .fill("")
-            .map((_, i) => `<button class="xo-cell" data-i="${i}"></button>`)
-            .join("")}
+        <div class="xo-board" id="xo-board"></div>
+        <div class="xo-win-line" id="xo-win-line">
+          <div class="win-line"></div>
         </div>
-        <div class="xo-win-line" id="xo-win-line"></div>
       </div>
+
+      <div class="xo-mensaje" id="xo-mensaje"></div>
+      <button class="xo-reset" id="xo-reset">🔄 Reiniciar</button>
     </div>
   `;
 
-  ocultarLineaGanadora(); // 
-
-  document.getElementById("xo-solo").onclick = iniciarXOCPU;
+  document.getElementById("xo-solo").onclick = iniciarXOSolo;
   document.getElementById("xo-online").onclick = iniciarXOOnline;
-  
+  document.getElementById("xo-reset").onclick = reiniciarXO;
 
+  crearTableroXO();
 }
 
-// ✅ CPU
-function iniciarXOCPU() {
-  limpiarListenerOnlineXO();
+/* ============================= */
+/* 🧱 TABLERO */
+/* ============================= */
 
-  tableroXO = Array(9).fill("");
-  juegoXOActivo = true;
+function crearTableroXO() {
+  const board = document.getElementById("xo-board");
+  board.innerHTML = "";
 
-  ocultarLineaGanadora();
-  mostrarInfoXO("Tu turno ❌ (X)");
-  actualizarTableroCPU();
-}
-
-function actualizarTableroCPU() {
-  document.querySelectorAll(".xo-cell").forEach((btn, i) => {
-    btn.textContent = tableroXO[i];
-    btn.onclick = () => jugarCPU(i);
+  tableroXO.forEach((_, i) => {
+    const cell = document.createElement("button");
+    cell.className = "xo-cell";
+    cell.onclick = () => jugarXO(i);
+    board.appendChild(cell);
   });
 }
 
-function jugarCPU(i) {
-  if (!juegoXOActivo || tableroXO[i]) return;
-
-  tableroXO[i] = "X";
-  actualizarTableroCPU();
-
-  if (verificarFinXOCPU()) return;
-
-  const libres = tableroXO
-    .map((v, idx) => (v === "" ? idx : null))
-    .filter((v) => v !== null);
-
-  const cpuMove = libres[Math.floor(Math.random() * libres.length)];
-  tableroXO[cpuMove] = "O";
-
-  actualizarTableroCPU();
-  verificarFinXOCPU();
+function actualizarTablero() {
+  document.querySelectorAll(".xo-cell").forEach((c, i) => {
+    c.innerText = tableroXO[i];
+  });
 }
 
-function verificarFinXOCPU() {
-  const ganador = calcularGanador(tableroXO);
+/* ============================= */
+/* 🤖 MODO SOLO */
+/* ============================= */
 
-  if (ganador) {
-    mostrarInfoXO(`🏆 Ganó ${ganador.jugador}`);
-    mostrarLineaGanadora(ganador.linea);
-    juegoXOActivo = false;
-    return true;
+function iniciarXOSolo() {
+  modoXO = "solo";
+  reiniciarXO();
+  juegoXOActivo = true;
+  turnoXO = "X";
+  document.getElementById("xo-turno").innerText = "Turno: X";
+}
+
+function jugarXO(i) {
+  if (!juegoXOActivo || tableroXO[i]) return;
+
+  tableroXO[i] = turnoXO;
+  actualizarTablero();
+
+  if (verificarGanador()) return;
+
+  turnoXO = turnoXO === "X" ? "O" : "X";
+  document.getElementById("xo-turno").innerText = `Turno: ${turnoXO}`;
+
+  if (modoXO === "solo" && turnoXO === "O") {
+    setTimeout(jugadaMaquina, 400);
+  }
+
+  if (modoXO === "online") {
+    actualizarSalaOnline();
+  }
+}
+
+function jugadaMaquina() {
+  const libres = tableroXO
+    .map((v, i) => v === "" ? i : null)
+    .filter(v => v !== null);
+
+  if (libres.length === 0) return;
+
+  const i = libres[Math.floor(Math.random() * libres.length)];
+  tableroXO[i] = "O";
+  actualizarTablero();
+
+  verificarGanador();
+  turnoXO = "X";
+  document.getElementById("xo-turno").innerText = "Turno: X";
+}
+
+/* ============================= */
+/* 🌍 MODO ONLINE */
+/* ============================= */
+
+async function iniciarXOOnline() {
+  modoXO = "online";
+  reiniciarXO();
+
+  const codigo = generarCodigoSala();
+  const turnoInicial = elegirTurnoInicial();
+
+  salaXO = doc(window.db, "salas_xo", codigo);
+
+  await setDoc(salaXO, {
+    tablero: Array(9).fill(""),
+    turno: turnoInicial,
+    estado: "jugando",
+    jugadores: { X: null, O: null }
+  });
+
+  jugadorOnline = turnoInicial;
+  await updateDoc(salaXO, {
+    [`jugadores.${jugadorOnline}`]: "player1"
+  });
+
+  mostrarOpcionesOnline(codigo);
+  escucharSala(codigo);
+}
+
+function mostrarOpcionesOnline(codigo) {
+  document.getElementById("xo-opciones").innerHTML = `
+    <p>🔑 Código de sala: <b>${codigo}</b></p>
+    <button id="copiar">📋 Copiar código</button>
+    <input id="unirse-codigo" placeholder="Código sala">
+    <button id="unirse">➡️ Unirse</button>
+  `;
+
+  document.getElementById("copiar").onclick = () =>
+    navigator.clipboard.writeText(codigo);
+
+  document.getElementById("unirse").onclick = unirseSalaXO;
+}
+
+async function unirseSalaXO() {
+  const codigo = document.getElementById("unirse-codigo").value;
+  const ref = doc(window.db, "salas_xo", codigo);
+  const snap = await getDoc(ref);
+
+  if (!snap.exists()) return alert("Sala no existe");
+
+  const data = snap.data();
+  if (data.jugadores.X && data.jugadores.O)
+    return alert("Sala llena");
+
+  jugadorOnline = data.jugadores.X ? "O" : "X";
+  await updateDoc(ref, {
+    [`jugadores.${jugadorOnline}`]: "player2"
+  });
+
+  salaXO = ref;
+  escucharSala(codigo);
+}
+
+function escucharSala(codigo) {
+  unsubSala = onSnapshot(doc(window.db, "salas_xo", codigo), snap => {
+    if (!snap.exists()) return;
+    const d = snap.data();
+
+    tableroXO = d.tablero;
+    turnoXO = d.turno;
+    juegoXOActivo = d.estado === "jugando";
+
+    actualizarTablero();
+    document.getElementById("xo-turno").innerText =
+      juegoXOActivo ? `Turno: ${turnoXO}` : "";
+
+    if (d.ganador) mostrarLineaGanadora(d.linea);
+  });
+}
+
+async function actualizarSalaOnline() {
+  if (!salaXO) return;
+
+  await updateDoc(salaXO, {
+    tablero: tableroXO,
+    turno: turnoXO
+  });
+}
+
+/* ============================= */
+/* 🏆 GANADOR + LÍNEA */
+/* ============================= */
+
+function verificarGanador() {
+  for (let combo of combinacionesGanadoras) {
+    const [a, b, c] = combo;
+    if (
+      tableroXO[a] &&
+      tableroXO[a] === tableroXO[b] &&
+      tableroXO[a] === tableroXO[c]
+    ) {
+      juegoXOActivo = false;
+      document.getElementById("xo-mensaje").innerText =
+        `🎉 Ganó ${tableroXO[a]}`;
+      mostrarLineaGanadora(combo);
+
+      if (modoXO === "online") {
+        updateDoc(salaXO, {
+          estado: "finalizado",
+          ganador: tableroXO[a],
+          linea: combo
+        });
+      }
+      return true;
+    }
   }
 
   if (!tableroXO.includes("")) {
-    mostrarInfoXO("🤝 Empate");
+    document.getElementById("xo-mensaje").innerText = "🤝 Empate";
     juegoXOActivo = false;
-    return true;
   }
-
   return false;
 }
 
-// ✅ ONLINE
-function iniciarXOOnline() {
-  limpiarListenerOnlineXO();
-
-  gameScreen.innerHTML = `
-    <div class="xo-container">
-      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
-        <button class="xo-reset" id="crear-sala">➕ Crear sala</button>
-        <input id="codigo-sala" placeholder="Código 4 dígitos" inputmode="numeric"
-          style="padding:12px; border-radius:10px; border:2px solid #333; background:#111; color:white; width:180px;" />
-        <button class="xo-reset" id="unirse-sala">🔗 Unirse</button>
-      </div>
-
-      <p id="xo-info" class="xo-mensaje"></p>
-
-      <div class="xo-board-wrapper">
-        <div class="xo-board">
-          ${Array(9)
-            .fill("")
-            .map((_, i) => `<button class="xo-cell" data-i="${i}"></button>`)
-            .join("")}
-        </div>
-        <div class="xo-win-line" id="xo-win-line"></div>
-      </div>
-    </div>
-  `;
-
-  ocultarLineaGanadora();
-  document.getElementById("crear-sala").onclick = crearSalaOnline;
-  document.getElementById("unirse-sala").onclick = unirseSalaOnline;
-
-  mostrarInfoXO("Crea una sala o únete con un código ✅");
-}
-
-function generarCodigo4Digitos() {
-  return String(Math.floor(Math.random() * 9000) + 1000);
-}
-
-async function crearSalaOnline() {
-  salaCodigo = generarCodigo4Digitos();
-  jugadorOnline = Math.random() < 0.5 ? "X" : "O";
-
-  const salaRef = doc(db, "salas", salaCodigo);
-
-  const existe = await getDoc(salaRef);
-  if (existe.exists()) return crearSalaOnline();
-
-  await setDoc(salaRef, {
-    tablero: Array(9).fill(""),
-    turno: "X",
-    creador: jugadorOnline,
-    estado: "jugando",
-  });
-
-  document.getElementById("codigo-sala").value = salaCodigo;
-  ocultarLineaGanadora();
-
-  mostrarInfoXO(`Sala creada ✅ Código: ${salaCodigo} | Tú eres ${jugadorOnline}`);
-  escucharSalaOnline();
-}
-
-async function unirseSalaOnline() {
-  const codigo = document.getElementById("codigo-sala").value.trim();
-
-  if (!codigo || codigo.length !== 4) {
-    mostrarInfoXO("❌ Pon un código de 4 números");
-    return;
-  }
-
-  salaCodigo = codigo;
-
-  const salaRef = doc(db, "salas", salaCodigo);
-  const snap = await getDoc(salaRef);
-
-  if (!snap.exists()) {
-    mostrarInfoXO("❌ Sala no encontrada");
-    return;
-  }
-
-  const data = snap.data();
-  jugadorOnline = data.creador === "X" ? "O" : "X";
-
-  ocultarLineaGanadora();
-  mostrarInfoXO(`Unido ✅ Código: ${salaCodigo} | Tú eres ${jugadorOnline}`);
-
-  escucharSalaOnline();
-}
-
-function escucharSalaOnline() {
-  limpiarListenerOnlineXO();
-
-  const salaRef = doc(db, "salas", salaCodigo);
-
-  unsubSala = onSnapshot(salaRef, (snap) => {
-    if (!snap.exists()) return;
-
-    const data = snap.data();
-
-    actualizarTableroOnline(data.tablero, data.turno);
-
-    if (data.estado !== "jugando") {
-      if (data.estado.startsWith("gano_")) {
-        const partes = data.estado.split("_");
-        const g = partes[1];
-        const linea = partes[2];
-
-        mostrarInfoXO(`🏆 Ganó ${g}`);
-        mostrarLineaGanadora(linea);
-      } else if (data.estado === "empate") {
-        mostrarInfoXO("🤝 Empate");
-      }
-      return;
-    }
-
-    if (data.turno === jugadorOnline) {
-      mostrarInfoXO(`Tu turno (${jugadorOnline}) ✅`);
-    } else {
-      mostrarInfoXO(`Turno del rival (${data.turno})...`);
-    }
-  });
-}
-
-function actualizarTableroOnline(tablero, turnoActual) {
-  document.querySelectorAll(".xo-cell").forEach((btn, i) => {
-    btn.textContent = tablero[i];
-    btn.onclick = () => jugarOnline(i, tablero, turnoActual);
-  });
-}
-
-async function jugarOnline(i, tablero, turnoActual) {
-  if (tablero[i] !== "") return;
-  if (turnoActual !== jugadorOnline) return;
-
-  const nuevoTablero = [...tablero];
-  nuevoTablero[i] = jugadorOnline;
-
-  const ganador = calcularGanador(nuevoTablero);
-  const empate = !nuevoTablero.includes("") && !ganador;
-
-  const nuevoTurno = jugadorOnline === "X" ? "O" : "X";
-  const salaRef = doc(db, "salas", salaCodigo);
-
-  await updateDoc(salaRef, {
-    tablero: nuevoTablero,
-    turno: nuevoTurno,
-    estado: ganador
-      ? `gano_${ganador.jugador}_${ganador.linea}`
-      : empate
-      ? "empate"
-      : "jugando",
-  });
-}
-
-function limpiarListenerOnlineXO() {
-  if (unsubSala) {
-    unsubSala();
-    unsubSala = null;
-  }
-}
-
-function calcularGanador(tablero) {
-  const combos = [
-    { c: [0, 1, 2], l: "row0" },
-    { c: [3, 4, 5], l: "row1" },
-    { c: [6, 7, 8], l: "row2" },
-
-    { c: [0, 3, 6], l: "col0" },
-    { c: [1, 4, 7], l: "col1" },
-    { c: [2, 5, 8], l: "col2" },
-
-    { c: [0, 4, 8], l: "diag0" },
-    { c: [2, 4, 6], l: "diag1" },
-  ];
-
-  for (let obj of combos) {
-    const [a, b, c] = obj.c;
-    if (tablero[a] && tablero[a] === tablero[b] && tablero[a] === tablero[c]) {
-      return { jugador: tablero[a], linea: obj.l };
-    }
-  }
-  return null;
-}
-
-function mostrarInfoXO(texto) {
-  const el = document.getElementById("xo-info");
-  if (el) el.textContent = texto;
-}
-
-function ocultarLineaGanadora() {
+function mostrarLineaGanadora(combo) {
   const line = document.getElementById("xo-win-line");
-  if (!line) return;
-  line.style.display = "none";
-  line.innerHTML = "";
-}
-
-function mostrarLineaGanadora(tipo) {
-  const line = document.getElementById("xo-win-line");
-  if (!line) return;
-
+  const l = line.querySelector(".win-line");
   line.style.display = "block";
-  line.innerHTML = "";
 
-  const l = document.createElement("div");
-  l.className = "win-line";
+  const posiciones = {
+    "0,1,2": "top",
+    "3,4,5": "middle",
+    "6,7,8": "bottom",
+    "0,3,6": "left",
+    "1,4,7": "center",
+    "2,5,8": "right",
+    "0,4,8": "diag1",
+    "2,4,6": "diag2"
+  };
 
-  // filas
-  if (tipo === "row0") {
-    l.style.width = "100%";
-    l.style.height = "6px";
-    l.style.left = "0";
-    l.style.top = "16%";
-  } else if (tipo === "row1") {
-    l.style.width = "100%";
-    l.style.height = "6px";
-    l.style.left = "0";
-    l.style.top = "50%";
-  } else if (tipo === "row2") {
-    l.style.width = "100%";
-    l.style.height = "6px";
-    l.style.left = "0";
-    l.style.top = "84%";
-  }
+  const tipo = posiciones[combo.join(",")];
 
-  // columnas
-  if (tipo === "col0") {
-    l.style.width = "6px";
-    l.style.height = "100%";
-    l.style.left = "16%";
-    l.style.top = "0";
-  } else if (tipo === "col1") {
-    l.style.width = "6px";
-    l.style.height = "100%";
-    l.style.left = "50%";
-    l.style.top = "0";
-  } else if (tipo === "col2") {
-    l.style.width = "6px";
-    l.style.height = "100%";
-    l.style.left = "84%";
-    l.style.top = "0";
-  }
+  l.style = "";
 
-  // diagonales
-  if (tipo === "diag0") {
-    l.style.width = "140%";
-    l.style.height = "6px";
-    l.style.left = "-20%";
-    l.style.top = "50%";
-    l.style.transform = "rotate(45deg)";
-  } else if (tipo === "diag1") {
-    l.style.width = "140%";
-    l.style.height = "6px";
-    l.style.left = "-20%";
-    l.style.top = "50%";
-    l.style.transform = "rotate(-45deg)";
-  }
-
-  line.appendChild(l);
+  if (tipo === "top") l.style = "top:15%;left:5%;width:90%;height:6px";
+  if (tipo === "middle") l.style = "top:50%;left:5%;width:90%;height:6px";
+  if (tipo === "bottom") l.style = "top:85%;left:5%;width:90%;height:6px";
+  if (tipo === "left") l.style = "left:15%;top:5%;height:90%;width:6px";
+  if (tipo === "center") l.style = "left:50%;top:5%;height:90%;width:6px";
+  if (tipo === "right") l.style = "left:85%;top:5%;height:90%;width:6px";
+  if (tipo === "diag1")
+    l.style = "top:50%;left:50%;width:120%;height:6px;transform:translate(-50%,-50%) rotate(45deg)";
+  if (tipo === "diag2")
+    l.style = "top:50%;left:50%;width:120%;height:6px;transform:translate(-50%,-50%) rotate(-45deg)";
 }
 
-/* ------------------------------
-   🐍 Snake, RPS, Adivina, Memoria
-   ✅ No tocado (copias tu resto tal cual)
------------------------------- */
+/* ============================= */
+/* 🔄 RESET */
+/* ============================= */
 
-/* ⚠️ IMPORTANTÍSIMO:
-   Aquí debes pegar EXACTAMENTE tu resto del código (Snake, RPS, etc.)
-   desde: "// ========================== 🐍 SNAKE"
-   porque lo dejé intacto en tu versión original.
-*/
+function reiniciarXO() {
+  tableroXO = Array(9).fill("");
+  juegoXOActivo = true;
+  turnoXO = elegirTurnoInicial();
 
-// ==========================
-// 🐍 SNAKE (Culebrita) + STATS
-// ==========================
-let snakeInterval = null;
-let direccion = "RIGHT";
-let direccionPendiente = "RIGHT";
-
-let snake = [];
-let comida = { x: 5, y: 5 };
-let score = 0;
-let highScore = loadNumber("snakeHighScore", 0);
-let gameOver = false;
-
-let velocidad = 200;
-let pausado = false;
-
-const gridSize = 20;
-const tileCount = 20;
-
-let snakeGamesPlayed = loadNumber("snakeGamesPlayed", 0);
-let snakeTotalApples = loadNumber("snakeTotalApples", 0);
-
-function guardarHighScore() {
-  saveNumber("snakeHighScore", highScore);
+  document.getElementById("xo-mensaje").innerText = "";
+  document.getElementById("xo-turno").innerText = `Turno: ${turnoXO}`;
+  document.getElementById("xo-win-line").style.display = "none";
+  actualizarTablero();
 }
 
-function mostrarSnake() {
-  gameTitle.textContent = "🐍 Culebrita";
+/* ================================================= */
+/* 🐍 SNAKE */
+/* ================================================= */
 
-  gameScreen.innerHTML = `
+document.getElementById("btn-snake").addEventListener("click", cargarSnake);
+
+function cargarSnake() {
+  document.getElementById("game-title").innerText = "🐍 Culebrita";
+
+  document.getElementById("game-screen").innerHTML = `
     <div class="snake-container">
-      <div class="stats">
-        <span>🎮 Partidas: <b id="snake-g">${snakeGamesPlayed}</b></span>
-        <span>🍎 Total: <b id="snake-a">${snakeTotalApples}</b></span>
-        <span>🏆 Récord: <b id="snake-high">${highScore}</b></span>
-      </div>
-
-      <p class="placeholder">Flechas / WASD | Pausa: SPACE</p>
-      <p class="placeholder">Puntos: <b id="snake-score">0</b></p>
-
-      <canvas id="snake-canvas" width="400" height="400"></canvas>
-
-      <p id="snake-msg" class="xo-mensaje"></p>
-
-      <div style="display:flex; gap:10px;">
-        <button class="xo-reset" id="snake-reset">🔄 Reiniciar</button>
-        <button class="xo-reset" id="snake-reset-stats">🧹 Reset Stats</button>
-      </div>
+      <canvas id="snake-canvas" width="360" height="360"></canvas>
+      <button class="xo-reset" id="snake-reset">🔄 Reiniciar</button>
     </div>
   `;
-
-  document.getElementById("snake-reset").addEventListener("click", iniciarSnake);
-
-  document.getElementById("snake-reset-stats").addEventListener("click", () => {
-    snakeGamesPlayed = 0;
-    snakeTotalApples = 0;
-    highScore = 0;
-    saveNumber("snakeGamesPlayed", snakeGamesPlayed);
-    saveNumber("snakeTotalApples", snakeTotalApples);
-    saveNumber("snakeHighScore", highScore);
-    mostrarSnake();
-  });
 
   iniciarSnake();
 }
 
+let snake, food, dir, snakeLoop;
+
 function iniciarSnake() {
-  snake = [
-    { x: 10, y: 10 },
-    { x: 9, y: 10 },
-    { x: 8, y: 10 },
-  ];
-
-  direccion = "RIGHT";
-  direccionPendiente = "RIGHT";
-
-  score = 0;
-  gameOver = false;
-  pausado = false;
-  velocidad = 200;
-
-  snakeGamesPlayed++;
-  saveNumber("snakeGamesPlayed", snakeGamesPlayed);
-
-  actualizarScoreSnake();
-  actualizarMensajeSnake("");
-
-  generarComida();
-
   const canvas = document.getElementById("snake-canvas");
-  if (canvas) {
-    const ctx = canvas.getContext("2d");
-    dibujarSnake(ctx);
-  }
+  const ctx = canvas.getContext("2d");
 
-  if (snakeInterval) clearInterval(snakeInterval);
-  snakeInterval = setInterval(actualizarSnake, velocidad);
-}
+  snake = [{ x: 5, y: 5 }, { x: 4, y: 5 }, { x: 3, y: 5 }];
+  dir = { x: 1, y: 0 };
+  food = generarComida();
 
-function actualizarScoreSnake() {
-  const scoreEl = document.getElementById("snake-score");
-  if (scoreEl) scoreEl.textContent = score;
+  document.onkeydown = e => {
+    if (e.key === "ArrowUp" && dir.y === 0) dir = { x: 0, y: -1 };
+    if (e.key === "ArrowDown" && dir.y === 0) dir = { x: 0, y: 1 };
+    if (e.key === "ArrowLeft" && dir.x === 0) dir = { x: -1, y: 0 };
+    if (e.key === "ArrowRight" && dir.x === 0) dir = { x: 1, y: 0 };
+  };
 
-  const highEl = document.getElementById("snake-high");
-  if (highEl) highEl.textContent = highScore;
+  clearInterval(snakeLoop);
+  snakeLoop = setInterval(() => {
+    ctx.clearRect(0, 0, 360, 360);
 
-  const gEl = document.getElementById("snake-g");
-  if (gEl) gEl.textContent = snakeGamesPlayed;
+    const head = {
+      x: snake[0].x + dir.x,
+      y: snake[0].y + dir.y
+    };
 
-  const aEl = document.getElementById("snake-a");
-  if (aEl) aEl.textContent = snakeTotalApples;
-}
+    if (
+      head.x < 0 || head.y < 0 ||
+      head.x >= 18 || head.y >= 18 ||
+      snake.some(s => s.x === head.x && s.y === head.y)
+    ) {
+      clearInterval(snakeLoop);
+      alert("💀 Perdiste");
+      return;
+    }
 
-function actualizarMensajeSnake(texto) {
-  const msgEl = document.getElementById("snake-msg");
-  if (msgEl) msgEl.textContent = texto;
+    snake.unshift(head);
+
+    if (head.x === food.x && head.y === food.y) {
+      food = generarComida();
+    } else {
+      snake.pop();
+    }
+
+    ctx.fillStyle = "red";
+    ctx.fillRect(food.x * 20, food.y * 20, 20, 20);
+
+    ctx.fillStyle = "#00ff88";
+    snake.forEach((s, i) => {
+      ctx.fillRect(s.x * 20, s.y * 20, 20, 20);
+    });
+  }, 140);
+
+  document.getElementById("snake-reset").onclick = iniciarSnake;
 }
 
 function generarComida() {
-  comida = {
-    x: Math.floor(Math.random() * tileCount),
-    y: Math.floor(Math.random() * tileCount),
+  return {
+    x: Math.floor(Math.random() * 18),
+    y: Math.floor(Math.random() * 18)
   };
-
-  for (let parte of snake) {
-    if (parte.x === comida.x && parte.y === comida.y) {
-      generarComida();
-      return;
-    }
-  }
 }
 
-function actualizarSnake() {
-  if (gameOver || pausado) return;
+/* ================================================= */
+/* ✊✋✌️ PIEDRA PAPEL TIJERA */
+/* ================================================= */
 
-  const canvas = document.getElementById("snake-canvas");
-  if (!canvas) return;
+document.getElementById("btn-rps").addEventListener("click", cargarRPS);
 
-  const ctx = canvas.getContext("2d");
+function cargarRPS() {
+  document.getElementById("game-title").innerText = "✊✋✌️ Piedra Papel Tijera";
 
-  direccion = direccionPendiente;
-
-  const cabeza = { ...snake[0] };
-
-  if (direccion === "RIGHT") cabeza.x++;
-  if (direccion === "LEFT") cabeza.x--;
-  if (direccion === "UP") cabeza.y--;
-  if (direccion === "DOWN") cabeza.y++;
-
-  if (
-    cabeza.x < 0 ||
-    cabeza.x >= tileCount ||
-    cabeza.y < 0 ||
-    cabeza.y >= tileCount
-  ) {
-    perderSnake();
-    return;
-  }
-
-  snake.unshift(cabeza);
-
-  const comio = cabeza.x === comida.x && cabeza.y === comida.y;
-
-  if (comio) {
-    score++;
-    snakeTotalApples++;
-    saveNumber("snakeTotalApples", snakeTotalApples);
-
-    beep(700, 0.06, "square");
-    generarComida();
-
-    if (score > highScore) {
-      highScore = score;
-      guardarHighScore();
-    }
-
-    if (score % 3 === 0 && velocidad > 60) {
-      velocidad -= 15;
-      clearInterval(snakeInterval);
-      snakeInterval = setInterval(actualizarSnake, velocidad);
-    }
-  } else {
-    snake.pop();
-  }
-
-  for (let i = 1; i < snake.length; i++) {
-    if (snake[i].x === cabeza.x && snake[i].y === cabeza.y) {
-      perderSnake();
-      return;
-    }
-  }
-
-  actualizarScoreSnake();
-  dibujarSnake(ctx);
-}
-
-function perderSnake() {
-  gameOver = true;
-  pausado = false;
-
-  beep(200, 0.12, "sawtooth");
-  actualizarMensajeSnake("💥 ¡Perdiste! Presiona Reiniciar 🔄");
-
-  if (snakeInterval) {
-    clearInterval(snakeInterval);
-    snakeInterval = null;
-  }
-}
-
-function dibujarSnake(ctx) {
-  const canvas = ctx.canvas;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  ctx.fillStyle = "red";
-  ctx.fillRect(
-    comida.x * gridSize,
-    comida.y * gridSize,
-    gridSize - 2,
-    gridSize - 2
-  );
-
-  for (let i = 1; i < snake.length; i++) {
-    const parte = snake[i];
-    ctx.fillStyle = "lime";
-    ctx.fillRect(
-      parte.x * gridSize,
-      parte.y * gridSize,
-      gridSize - 2,
-      gridSize - 2
-    );
-  }
-
-  dibujarCabezaTriangular(ctx);
-}
-
-function dibujarCabezaTriangular(ctx) {
-  const cabeza = snake[0];
-  if (!cabeza) return;
-
-  const x = cabeza.x * gridSize;
-  const y = cabeza.y * gridSize;
-
-  ctx.fillStyle = "#00ff88";
-  ctx.beginPath();
-
-  if (direccion === "RIGHT") {
-    ctx.moveTo(x + gridSize - 2, y + gridSize / 2);
-    ctx.lineTo(x + 1, y + 1);
-    ctx.lineTo(x + 1, y + gridSize - 1);
-  } else if (direccion === "LEFT") {
-    ctx.moveTo(x + 1, y + gridSize / 2);
-    ctx.lineTo(x + gridSize - 1, y + 1);
-    ctx.lineTo(x + gridSize - 1, y + gridSize - 1);
-  } else if (direccion === "UP") {
-    ctx.moveTo(x + gridSize / 2, y + 1);
-    ctx.lineTo(x + 1, y + gridSize - 1);
-    ctx.lineTo(x + gridSize - 1, y + gridSize - 1);
-  } else if (direccion === "DOWN") {
-    ctx.moveTo(x + gridSize / 2, y + gridSize - 1);
-    ctx.lineTo(x + 1, y + 1);
-    ctx.lineTo(x + gridSize - 1, y + 1);
-  }
-
-  ctx.closePath();
-  ctx.fill();
-}
-
-// ==========================
-// ✊✋✌️ PIEDRA PAPEL TIJERA (COMPLETO)
-// ==========================
-let rpsWins = loadNumber("rpsWins", 0);
-let rpsLosses = loadNumber("rpsLosses", 0);
-let rpsDraws = loadNumber("rpsDraws", 0);
-
-function mostrarRPS() {
-  gameTitle.textContent = "✊✋✌️ Piedra, Papel o Tijera";
-
-  gameScreen.innerHTML = `
+  document.getElementById("game-screen").innerHTML = `
     <div class="xo-container">
       <div class="stats">
-        <span>✅ Ganadas: <b id="rps-w">${rpsWins}</b></span>
-        <span>❌ Perdidas: <b id="rps-l">${rpsLosses}</b></span>
-        <span>🤝 Empates: <b id="rps-d">${rpsDraws}</b></span>
+        <button onclick="jugarRPS('piedra')">✊ Piedra</button>
+        <button onclick="jugarRPS('papel')">✋ Papel</button>
+        <button onclick="jugarRPS('tijera')">✌️ Tijera</button>
       </div>
-
-      <p class="placeholder">Elige una opción:</p>
-
-      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
-        <button class="xo-reset" id="rps-rock">✊ Piedra</button>
-        <button class="xo-reset" id="rps-paper">✋ Papel</button>
-        <button class="xo-reset" id="rps-scissors">✌️ Tijera</button>
-      </div>
-
-      <p id="rps-result" class="xo-mensaje"></p>
-
-      <button class="xo-reset" id="rps-reset">🧹 Reset Marcador</button>
+      <div class="xo-mensaje" id="rps-res"></div>
     </div>
   `;
-
-  document.getElementById("rps-rock").addEventListener("click", () => jugarRPS("piedra"));
-  document.getElementById("rps-paper").addEventListener("click", () => jugarRPS("papel"));
-  document.getElementById("rps-scissors").addEventListener("click", () => jugarRPS("tijera"));
-
-  document.getElementById("rps-reset").addEventListener("click", () => {
-    rpsWins = 0;
-    rpsLosses = 0;
-    rpsDraws = 0;
-    saveNumber("rpsWins", rpsWins);
-    saveNumber("rpsLosses", rpsLosses);
-    saveNumber("rpsDraws", rpsDraws);
-    mostrarRPS();
-  });
 }
 
 function jugarRPS(jugador) {
   const opciones = ["piedra", "papel", "tijera"];
   const cpu = opciones[Math.floor(Math.random() * 3)];
 
-  let resultado = "🤝 Empate";
-  if (
+  let res = "";
+
+  if (jugador === cpu) res = "🤝 Empate";
+  else if (
     (jugador === "piedra" && cpu === "tijera") ||
     (jugador === "papel" && cpu === "piedra") ||
     (jugador === "tijera" && cpu === "papel")
-  ) {
-    resultado = "✅ Ganaste";
-    rpsWins++;
-    beep(700, 0.06, "square");
-  } else if (jugador !== cpu) {
-    resultado = "❌ Perdiste";
-    rpsLosses++;
-    beep(200, 0.12, "sawtooth");
-  } else {
-    rpsDraws++;
-    beep(500, 0.06, "triangle");
-  }
+  ) res = "🎉 Ganaste";
+  else res = "😢 Perdiste";
 
-  saveNumber("rpsWins", rpsWins);
-  saveNumber("rpsLosses", rpsLosses);
-  saveNumber("rpsDraws", rpsDraws);
-
-  document.getElementById("rps-result").textContent =
-    `Tú: ${jugador} | CPU: ${cpu} → ${resultado}`;
-
-  mostrarRPSStats();
+  document.getElementById("rps-res").innerText =
+    `Tú: ${jugador} | CPU: ${cpu} → ${res}`;
 }
 
-function mostrarRPSStats() {
-  const w = document.getElementById("rps-w");
-  const l = document.getElementById("rps-l");
-  const d = document.getElementById("rps-d");
-  if (w) w.textContent = rpsWins;
-  if (l) l.textContent = rpsLosses;
-  if (d) d.textContent = rpsDraws;
-}
+/* ================================================= */
+/* 🧠 MEMORIA */
+/* ================================================= */
 
-// ==========================
-// 🔢 ADIVINA EL NÚMERO (COMPLETO)
-// ==========================
-function getBestKey(range) {
-  return `guessBest_${range}`;
-}
+document.getElementById("btn-memo").addEventListener("click", cargarMemoria);
 
-function mostrarAdivinaNumero() {
-  gameTitle.textContent = "🔢 Adivina el número";
+function cargarMemoria() {
+  document.getElementById("game-title").innerText = "🧠 Memoria";
 
-  gameScreen.innerHTML = `
-    <div class="xo-container" style="max-width:500px;">
-      <div class="stats">
-        <span>Mejor (1-10): <b id="best10">${mostrarBest(10)}</b></span>
-        <span>Mejor (1-50): <b id="best50">${mostrarBest(50)}</b></span>
-        <span>Mejor (1-100): <b id="best100">${mostrarBest(100)}</b></span>
-      </div>
-
-      <p class="placeholder">Elige dificultad:</p>
-
-      <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
-        <button class="xo-reset" id="diff10">1 - 10</button>
-        <button class="xo-reset" id="diff50">1 - 50</button>
-        <button class="xo-reset" id="diff100">1 - 100</button>
-      </div>
-
-      <div id="guess-area"></div>
+  document.getElementById("game-screen").innerHTML = `
+    <div class="xo-container">
+      <div class="xo-board" id="memo-board"></div>
+      <div class="xo-mensaje" id="memo-msg"></div>
     </div>
   `;
-
-  document.getElementById("diff10").addEventListener("click", () => iniciarAdivina(10));
-  document.getElementById("diff50").addEventListener("click", () => iniciarAdivina(50));
-  document.getElementById("diff100").addEventListener("click", () => iniciarAdivina(100));
-}
-
-function mostrarBest(range) {
-  const best = loadNumber(getBestKey(range), 0);
-  return best === 0 ? "-" : best;
-}
-
-let guessTarget = null;
-let guessRange = 10;
-let guessTries = 0;
-
-function iniciarAdivina(range) {
-  guessRange = range;
-  guessTarget = Math.floor(Math.random() * range) + 1;
-  guessTries = 0;
-
-  const area = document.getElementById("guess-area");
-  area.innerHTML = `
-    <p class="placeholder">Adivina un número entre <b>1</b> y <b>${range}</b></p>
-
-    <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
-      <input id="guess-input" type="number" min="1" max="${range}"
-        style="padding:12px; border-radius:10px; border:2px solid #333; background:#111; color:white; width:160px;" />
-      <button class="xo-reset" id="guess-btn">Probar</button>
-    </div>
-
-    <p id="guess-msg" class="xo-mensaje"></p>
-    <p class="placeholder">Intentos: <b id="guess-tries">0</b></p>
-  `;
-
-  document.getElementById("guess-btn").addEventListener("click", intentarAdivina);
-}
-
-function intentarAdivina() {
-  const input = document.getElementById("guess-input");
-  const msg = document.getElementById("guess-msg");
-  const triesEl = document.getElementById("guess-tries");
-
-  const val = Number(input.value);
-
-  if (!val || val < 1 || val > guessRange) {
-    msg.textContent = `❗ Pon un número válido (1 - ${guessRange})`;
-    beep(250, 0.06, "sawtooth");
-    return;
-  }
-
-  guessTries++;
-  triesEl.textContent = guessTries;
-
-  if (val === guessTarget) {
-    msg.textContent = `🎉 ¡Correcto! Era ${guessTarget}. Lo lograste en ${guessTries} intentos`;
-    beep(800, 0.08, "square");
-
-    const key = getBestKey(guessRange);
-    const best = loadNumber(key, 0);
-
-    if (best === 0 || guessTries < best) {
-      saveNumber(key, guessTries);
-      msg.textContent += " 🏆 ¡Nuevo récord!";
-    }
-
-    const b10 = document.getElementById("best10");
-    const b50 = document.getElementById("best50");
-    const b100 = document.getElementById("best100");
-    if (b10) b10.textContent = mostrarBest(10);
-    if (b50) b50.textContent = mostrarBest(50);
-    if (b100) b100.textContent = mostrarBest(100);
-
-    return;
-  }
-
-  if (val < guessTarget) {
-    msg.textContent = "📈 Más alto";
-    beep(500, 0.05, "triangle");
-  } else {
-    msg.textContent = "📉 Más bajo";
-    beep(500, 0.05, "triangle");
-  }
-}
-
-// ==========================
-// 🧠 MEMORIA (COMPLETO)
-// ==========================
-let memCards = [];
-let memFlipped = [];
-let memLocked = false;
-let memMoves = 0;
-let memBest = loadNumber("memBestMoves", 0);
-
-function mostrarMemoria() {
-  gameTitle.textContent = "🧠 Memoria";
 
   iniciarMemoria();
-  renderMemoria();
 }
+
+let cartas, seleccionadas;
 
 function iniciarMemoria() {
-  const icons = ["🍎", "🍌", "🍇", "🍉", "🍒", "🍓", "🍍", "🥝"];
-  memCards = [...icons, ...icons]
-    .sort(() => Math.random() - 0.5)
-    .map((v, i) => ({ id: i, value: v, matched: false }));
+  const icons = ["🍎","🍌","🍇","🍉","🍒","🍍"];
+  cartas = [...icons, ...icons].sort(() => Math.random() - 0.5);
+  seleccionadas = [];
 
-  memFlipped = [];
-  memLocked = false;
-  memMoves = 0;
-}
+  const board = document.getElementById("memo-board");
+  board.innerHTML = "";
 
-function renderMemoria() {
-  const bestText = memBest === 0 ? "-" : memBest;
-
-  gameScreen.innerHTML = `
-    <div class="xo-container" style="max-width:520px;">
-      <div class="stats">
-        <span>Movimientos: <b id="mem-moves">${memMoves}</b></span>
-        <span>Mejor: <b id="mem-best">${bestText}</b></span>
-      </div>
-
-      <div id="mem-grid"
-        style="
-          display:grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap:10px;
-          width:100%;
-          max-width:420px;
-        ">
-      </div>
-
-      <p id="mem-msg" class="xo-mensaje"></p>
-
-      <button class="xo-reset" id="mem-reset">🔄 Reiniciar</button>
-    </div>
-  `;
-
-  const grid = document.getElementById("mem-grid");
-
-  memCards.forEach((card) => {
-    const btn = document.createElement("button");
-    btn.className = "xo-cell";
-    btn.style.width = "90px";
-    btn.style.height = "90px";
-    btn.style.fontSize = "28px";
-
-    const isFlipped = memFlipped.includes(card.id) || card.matched;
-    btn.textContent = isFlipped ? card.value : "❓";
-
-    btn.addEventListener("click", () => flipCard(card.id));
-    grid.appendChild(btn);
-  });
-
-  document.getElementById("mem-reset").addEventListener("click", () => {
-    iniciarMemoria();
-    renderMemoria();
+  cartas.forEach((icon, i) => {
+    const c = document.createElement("button");
+    c.className = "xo-cell";
+    c.innerText = "?";
+    c.onclick = () => voltearCarta(c, icon);
+    board.appendChild(c);
   });
 }
 
-function flipCard(id) {
-  if (memLocked) return;
+function voltearCarta(btn, icon) {
+  if (seleccionadas.length === 2 || btn.innerText !== "?") return;
 
-  const card = memCards.find((c) => c.id === id);
-  if (!card || card.matched) return;
-  if (memFlipped.includes(id)) return;
+  btn.innerText = icon;
+  seleccionadas.push(btn);
 
-  memFlipped.push(id);
-  beep(550, 0.05, "triangle");
-  renderMemoria();
-
-  if (memFlipped.length === 2) {
-    memMoves++;
-    document.getElementById("mem-moves").textContent = memMoves;
-
-    const [a, b] = memFlipped;
-    const c1 = memCards.find((c) => c.id === a);
-    const c2 = memCards.find((c) => c.id === b);
-
-    if (c1.value === c2.value) {
-      c1.matched = true;
-      c2.matched = true;
-      memFlipped = [];
-      beep(800, 0.08, "square");
-
-      if (memCards.every((c) => c.matched)) {
-        const msg = document.getElementById("mem-msg");
-        msg.textContent = `🏆 ¡Ganaste! Movimientos: ${memMoves}`;
-
-        if (memBest === 0 || memMoves < memBest) {
-          memBest = memMoves;
-          saveNumber("memBestMoves", memBest);
-          document.getElementById("mem-best").textContent = memBest;
-          msg.textContent += " ✅ ¡Nuevo récord!";
-        }
+  if (seleccionadas.length === 2) {
+    setTimeout(() => {
+      if (seleccionadas[0].innerText !== seleccionadas[1].innerText) {
+        seleccionadas.forEach(b => b.innerText = "?");
       }
-
-      renderMemoria();
-    } else {
-      memLocked = true;
-      beep(200, 0.08, "sawtooth");
-
-      setTimeout(() => {
-        memFlipped = [];
-        memLocked = false;
-        renderMemoria();
-      }, 700);
-    }
+      seleccionadas = [];
+    }, 600);
   }
 }
-
-// ==========================
-// ⭐ Próximamente
-// ==========================
-function mostrarProx() {
-  gameTitle.textContent = "⭐ Próximamente";
-  gameScreen.innerHTML = `<p class="placeholder">🚧 Este juego lo agregaremos después.</p>`;
-}
-
-// ==========================
-// 🎮 Controles globales (Snake)
-// ==========================
-document.addEventListener("keydown", (e) => {
-  const key = e.key.toLowerCase();
-
-  if (key === " " && gameTitle.textContent === "🐍 Culebrita") {
-    e.preventDefault();
-  }
-  if (e.repeat) return;
-
-  if (key === " ") {
-    if (gameTitle.textContent !== "🐍 Culebrita") return;
-    if (gameOver) return;
-
-    pausado = !pausado;
-
-    if (pausado) {
-      beep(500, 0.05, "triangle");
-      actualizarMensajeSnake("⏸️ Pausado (presiona SPACE para continuar)");
-    } else {
-      beep(650, 0.05, "triangle");
-      actualizarMensajeSnake("");
-    }
-    return;
-  }
-
-  if (gameTitle.textContent !== "🐍 Culebrita") return;
-  if (pausado) return;
-
-  if ((key === "arrowup" || key === "w") && direccion !== "DOWN")
-    direccionPendiente = "UP";
-
-  if ((key === "arrowdown" || key === "s") && direccion !== "UP")
-    direccionPendiente = "DOWN";
-
-  if ((key === "arrowleft" || key === "a") && direccion !== "RIGHT")
-    direccionPendiente = "LEFT";
-
-  if ((key === "arrowright" || key === "d") && direccion !== "LEFT")
-    direccionPendiente = "RIGHT";
-});
-
-// ==========================
-// ✅ Eventos del menú + Activo
-// ==========================
-btnXO.addEventListener("click", () => {
-  setActiveButton(btnXO);
-  renderXO();
-});
-
-btnSnake.addEventListener("click", () => {
-  setActiveButton(btnSnake);
-  mostrarSnake();
-});
-
-btnRPS.addEventListener("click", () => {
-  setActiveButton(btnRPS);
-  mostrarRPS();
-});
-
-btnNum.addEventListener("click", () => {
-  setActiveButton(btnNum);
-  mostrarAdivinaNumero();
-});
-
-btnMemo.addEventListener("click", () => {
-  setActiveButton(btnMemo);
-  mostrarMemoria();
-});
-
-btnProx.addEventListener("click", () => {
-  setActiveButton(btnProx);
-  mostrarProx();
-});
-
-setActiveButton(null);
